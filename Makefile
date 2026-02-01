@@ -1,4 +1,4 @@
-.PHONY: help venv install clean run test ingest-venv ingest-install ingest-setup ingest ingest-stats ingest-clear clean-md clean-db deps setup
+.PHONY: help venv install clean run test ingest-venv ingest-install ingest-setup ingest ingest-stats ingest-clear query-venv query-install query-setup query clean-md clean-db deps setup
 
 # Variables - Watch
 VENV = venv
@@ -9,6 +9,11 @@ PIP = $(VENV)/bin/pip
 INGEST_VENV = ingest-venv
 INGEST_PYTHON = $(INGEST_VENV)/bin/python
 INGEST_PIP = $(INGEST_VENV)/bin/pip
+
+# Variables - Query
+QUERY_VENV = query-venv
+QUERY_PYTHON = $(QUERY_VENV)/bin/python
+QUERY_PIP = $(QUERY_VENV)/bin/pip
 
 # Default target
 help:
@@ -28,6 +33,12 @@ help:
 	@echo "  make ingest         - Run ingestion pipeline"
 	@echo "  make ingest-stats   - Show database statistics"
 	@echo "  make ingest-clear   - Clear all data and history from database"
+	@echo ""
+	@echo "Query Pipeline (RAG with PydanticAI):"
+	@echo "  make query-venv     - Create query virtual environment"
+	@echo "  make query-install  - Install query dependencies"
+	@echo "  make query-setup    - Complete query setup"
+	@echo "  make query          - Run interactive query mode"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make clean      - Remove all virtual environments"
@@ -106,11 +117,43 @@ ingest-clear: ingest-venv
 	@echo "Clearing database..."
 	$(INGEST_PYTHON) ingest.py --clear
 
+# === Query Pipeline (PydanticAI + Ollama) ===
+
+# Create query virtual environment
+query-venv:
+	@echo "Creating query virtual environment..."
+	python3 -m venv $(QUERY_VENV)
+	@echo "✓ Query virtual environment created"
+
+# Install query dependencies
+query-install: query-venv
+	@echo "Installing query dependencies..."
+	$(QUERY_PIP) install --upgrade pip
+	$(QUERY_PIP) install -r requirements-query.txt
+	@echo "✓ Query dependencies installed"
+
+# Complete query setup
+query-setup: query-install
+	@echo "✓ Query setup complete!"
+	@echo ""
+	@echo "Make sure Ollama is installed and running:"
+	@echo "  1. Install: https://ollama.ai"
+	@echo "  2. Pull model: ollama pull llama3.2"
+	@echo "  3. Start Ollama service"
+	@echo ""
+	@echo "Then run 'make query' to start querying your documents"
+
+# Run query in interactive mode
+query: query-install
+	@echo "Starting RAG Query Assistant..."
+	$(QUERY_PYTHON) query.py --interactive
+
 # Clean up
 clean:
 	@echo "Cleaning up..."
 	rm -rf $(VENV)
 	rm -rf $(INGEST_VENV)
+	rm -rf $(QUERY_VENV)
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
 	find . -type f -name "*.pyo" -delete

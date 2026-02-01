@@ -1,6 +1,7 @@
 # Virtual environments
 venv/
 ingest-venv/
+query-venv/
 *.pyc
 __pycache__/
 *.pyo
@@ -21,6 +22,8 @@ Thumbs.db
 # Project specific
 md-content/*.md
 md-content/**/*.md
+
+watched-dir/*
 
 # LanceDB
 lancedb/
