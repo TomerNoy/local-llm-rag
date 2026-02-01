@@ -1,0 +1,26 @@
+# Virtual environments
+venv/
+ingest-venv/
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+md-content/*.md
+md-content/**/*.md
+
+# LanceDB
+lancedb/
