@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import List, Dict, Any
 import lancedb
 from sentence_transformers import SentenceTransformer
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import MarkdownTextSplitter
 
 # Configuration
 MD_CONTENT_DIR = Path("md-content")
@@ -24,7 +24,7 @@ CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
 
 # Embedding model
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # 384 dimensions, fast and good quality
+EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"  # 384 dimensions, multilingual (50+ languages including Hebrew)
 
 
 class DocumentIngester:
@@ -57,12 +57,15 @@ class DocumentIngester:
         self.embedding_dim = self.embedder.get_sentence_embedding_dimension()
         print(f"✓ Model loaded (dimension: {self.embedding_dim})")
         
-        # Initialize text splitter
-        self.text_splitter = RecursiveCharacterTextSplitter(
+        # Initialize text splitter for Markdown
+        # MarkdownTextSplitter respects markdown structure:
+        # - Keeps headers with their content
+        # - Preserves code blocks
+        # - Handles lists properly
+        # - Respects bold/emphasis sections
+        self.text_splitter = MarkdownTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
-            length_function=len,
-            separators=["\n\n", "\n", " ", ""]
         )
         
         # Connect to LanceDB

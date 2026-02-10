@@ -1,5 +1,5 @@
 # Query Pipeline Dependencies
-# For RAG querying with PydanticAI + Ollama
+# For RAG querying with PydanticAI + OpenAI API
 
 # Core dependencies
 pydantic-ai>=0.0.14
@@ -10,6 +10,6 @@ lancedb>=0.4.0
 sentence-transformers>=2.2.2
 pyarrow>=14.0.0
 
-# Ollama client (included in pydantic-ai but explicit for clarity)
-# httpx is used by pydantic-ai for Ollama communication
+# OpenAI client (included in pydantic-ai but explicit for clarity)
+openai>=1.0.0
 httpx>=0.25.0

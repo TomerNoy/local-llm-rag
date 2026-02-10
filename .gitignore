@@ -2,6 +2,9 @@
 venv/
 ingest-venv/
 query-venv/
+venv311/
+marker_output/*
+
 *.pyc
 __pycache__/
 *.pyo

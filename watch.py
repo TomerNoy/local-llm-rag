@@ -8,6 +8,7 @@ Preserves folder structure for LanceDB ingestion.
 import os
 import time
 import shutil
+import subprocess
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from watchdog.observers import Observer
@@ -16,6 +17,16 @@ import pypandoc
 import pytesseract
 from pdf2image import convert_from_path
 from PIL import Image
+
+# Check if marker-pdf is available (in venv311)
+MARKER_AVAILABLE = Path(__file__).parent / 'venv311' / 'bin' / 'marker_single'
+if MARKER_AVAILABLE.exists():
+    MARKER_AVAILABLE = True
+    print("✓ Marker available in venv311 for better Hebrew OCR")
+else:
+    MARKER_AVAILABLE = False
+    print("⚠️  marker-pdf not installed in venv311. Using pytesseract for OCR.")
+
 
 # Configuration
 WATCHED_DIR = Path("watched-dir")
@@ -116,6 +127,57 @@ class FileConversionHandler(FileSystemEventHandler):
             except:
                 # Fall back to OCR for scanned PDFs
                 print(f"→ PDF appears scanned, using OCR: {file_path}")
+                
+                # Try Marker first (better for Hebrew and structure)
+                if MARKER_AVAILABLE:
+                    try:
+                        import subprocess
+                        import tempfile
+                        import shutil
+                        
+                        # Use marker_single CLI from venv311
+                        with tempfile.TemporaryDirectory() as tmpdir:
+                            print("Converting with Marker (this may take a few minutes)...")
+                            
+                            # Call marker_single from venv311
+                            result = subprocess.run(
+                                ['./venv311/bin/marker_single', str(file_path), '--output_dir', tmpdir],
+                                capture_output=True,
+                                text=True,
+                                cwd=Path(__file__).parent
+                            )
+                            
+                            if result.returncode == 0:
+                                # Find the generated markdown file
+                                pdf_basename = Path(file_path).stem
+                                marker_md_path = Path(tmpdir) / pdf_basename / f"{pdf_basename}.md"
+                                
+                                if marker_md_path.exists():
+                                    # Copy to output location
+                                    shutil.copy(marker_md_path, output_path)
+                                    print(f"✓ Marker OCR: {file_path} -> {output_path}")
+                                    return True
+                                else:
+                                    print(f"⚠️  Marker output not found at {marker_md_path}")
+                            else:
+                                print(f"⚠️  Marker failed: {result.stderr[:200]}")
+                        
+                    except Exception as e:
+                        print(f"⚠️  Marker error: {e}, falling back to pytesseract")
+                
+                # Fall back to pytesseract
+                        with open(output_path, 'w', encoding='utf-8') as f:
+                            f.write(f"# {Path(file_path).name}\n\n")
+                            f.write(f"*Source: {file_path}*\n\n")
+                            f.write("---\n\n")
+                            f.write(full_text)
+                        
+                        print(f"✓ Marker OCR'd PDF: {file_path} -> {output_path}")
+                        return True
+                    except Exception as marker_error:
+                        print(f"⚠️  Marker failed ({marker_error}), falling back to pytesseract")
+                
+                # Fallback to pytesseract
                 images = convert_from_path(file_path)
                 
                 with open(output_path, 'w', encoding='utf-8') as f:
@@ -129,7 +191,7 @@ class FileConversionHandler(FileSystemEventHandler):
                         text = pytesseract.image_to_string(image, lang='heb+eng')
                         f.write(text)
                 
-                print(f"✓ OCR'd PDF: {file_path} -> {output_path}")
+                print(f"✓ Pytesseract OCR'd PDF: {file_path} -> {output_path}")
                 return True
                 
         except Exception as e:
