@@ -1,0 +1,7 @@
+# query service: RAG agent (PydanticAI + LanceDB + LM Studio)
+pydantic-ai>=1.0
+pydantic>=2.0
+lancedb>=0.4
+sentence-transformers>=2.2
+pyarrow>=14.0
+openai>=1.0
