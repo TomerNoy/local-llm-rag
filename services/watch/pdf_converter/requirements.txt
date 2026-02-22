@@ -1,0 +1,5 @@
+# PDF to Markdown: digital + OCR (used by watch service)
+PyMuPDF>=1.25
+pymupdf4llm>=0.2
+docling>=2.50
+wordfreq>=3.0

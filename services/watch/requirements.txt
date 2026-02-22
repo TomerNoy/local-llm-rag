@@ -1,0 +1,5 @@
+# watch service: file watcher, pandoc, tesseract, images
+watchdog>=4.0
+pypandoc>=1.13
+pytesseract>=0.3
+Pillow>=10.0

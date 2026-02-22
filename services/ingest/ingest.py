@@ -5,18 +5,24 @@ Processes md-content and stores chunks with embeddings in LanceDB.
 """
 
 import os
+import json
 import hashlib
+import shutil
+import argparse
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any
 import lancedb
+import pyarrow.compute as pc
 from sentence_transformers import SentenceTransformer
 from langchain_text_splitters import MarkdownTextSplitter
 
-# Configuration
-MD_CONTENT_DIR = Path("md-content")
-WATCHED_DIR = Path("watched-dir")
-LANCEDB_PATH = Path("lancedb")
+# Load shared config from project root
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_config = json.loads((_PROJECT_ROOT / "config.json").read_text())
+MD_CONTENT_DIR = _PROJECT_ROOT / _config["md_content_dir"]
+WATCHED_DIR = _PROJECT_ROOT / _config["watched_dir"]
+LANCEDB_PATH = _PROJECT_ROOT / _config["lancedb_dir"]
 TABLE_NAME = "documents"
 
 # Chunking configuration
@@ -77,12 +83,11 @@ class DocumentIngester:
         try:
             self.table = self.db.open_table(self.table_name)
             print(f"✓ Opened existing table: {self.table_name}")
-        except:
+        except Exception:
             print(f"Creating new table: {self.table_name}")
-            # Create with empty schema - will be inferred from first insert
             self.table = None
     
-    def get_file_hash(self, file_path: Path) -> str:
+    def _get_file_hash(self, file_path: Path) -> str:
         """Calculate MD5 hash of file for change detection."""
         md5 = hashlib.md5()
         with open(file_path, 'rb') as f:
@@ -90,7 +95,7 @@ class DocumentIngester:
                 md5.update(chunk)
         return md5.hexdigest()
     
-    def extract_tags_from_path(self, md_path: Path) -> List[str]:
+    def _extract_tags_from_path(self, md_path: Path) -> List[str]:
         """Extract folder structure as tags."""
         # Get relative path from md-content
         rel_path = md_path.relative_to(MD_CONTENT_DIR)
@@ -98,7 +103,7 @@ class DocumentIngester:
         tags = [part for part in rel_path.parent.parts if part != '.']
         return tags if tags else ["root"]
     
-    def determine_file_type(self, md_path: Path, source_path: Path) -> str:
+    def _determine_file_type(self, md_path: Path, source_path: Path) -> str:
         """Determine the type of original file."""
         if not source_path.exists():
             return "unknown"
@@ -128,7 +133,7 @@ class DocumentIngester:
         else:
             return "other"
     
-    def find_source_file(self, md_path: Path) -> Path:
+    def _find_source_file(self, md_path: Path) -> Path:
         """Find original source file in watched-dir."""
         # Get relative path and reconstruct with different extensions
         rel_path = md_path.relative_to(MD_CONTENT_DIR)
@@ -146,7 +151,7 @@ class DocumentIngester:
         # Fallback: return the path (not resolved) even if it doesn't exist
         return base_path
     
-    def get_existing_hash(self, source_path: Path) -> str:
+    def _get_existing_hash(self, source_path: Path) -> str:
         """Get hash of existing file in database, if any."""
         if self.table is None:
             return None
@@ -156,8 +161,6 @@ class DocumentIngester:
             source_str = self.normalize_path(source_path)
             table = self.table.to_arrow()
             
-            # Filter for matching source_path
-            import pyarrow.compute as pc
             mask = pc.equal(table['source_path'], source_str)
             filtered = table.filter(mask)
             
@@ -176,7 +179,6 @@ class DocumentIngester:
             source_str = self.normalize_path(source_path)
             
             # Count how many chunks before deletion - refresh table first
-            import pyarrow.compute as pc
             table = self.table.to_arrow()
             
             mask = pc.equal(table['source_path'], source_str)
@@ -194,15 +196,15 @@ class DocumentIngester:
             print(f"✗ Error deleting {source_path}: {e}")
             return 0
     
-    def chunk_document(self, content: str, md_path: Path, source_path: Path, file_hash: str) -> List[Dict[str, Any]]:
+    def _chunk_document(self, content: str, md_path: Path, source_path: Path, file_hash: str) -> List[Dict[str, Any]]:
         """Split document into chunks and prepare for ingestion."""
         # Split text into chunks
         chunks = self.text_splitter.split_text(content)
         total_chunks = len(chunks)
         
         # Extract metadata
-        tags = self.extract_tags_from_path(md_path)
-        file_type = self.determine_file_type(md_path, source_path)
+        tags = self._extract_tags_from_path(md_path)
+        file_type = self._determine_file_type(md_path, source_path)
         file_name = md_path.stem
         timestamp = datetime.now().isoformat()
         
@@ -234,14 +236,14 @@ class DocumentIngester:
         """Ingest a single markdown file with hash-based change detection."""
         try:
             # Find source file
-            source_path = self.find_source_file(md_path)
+            source_path = self._find_source_file(md_path)
             
             # Calculate hash of markdown file
-            file_hash = self.get_file_hash(md_path)
+            file_hash = self._get_file_hash(md_path)
             
             # Check if file already exists with same hash (unless force=True)
             if not force:
-                existing_hash = self.get_existing_hash(source_path)
+                existing_hash = self._get_existing_hash(source_path)
                 if existing_hash == file_hash:
                     print(f"⊘ Skipped (unchanged): {md_path.name}")
                     return -1  # -1 indicates skipped due to unchanged
@@ -257,12 +259,12 @@ class DocumentIngester:
             
             # If file exists but hash is different, delete old chunks first
             if self.table is not None:
-                existing_hash = self.get_existing_hash(source_path)
+                existing_hash = self._get_existing_hash(source_path)
                 if existing_hash and existing_hash != file_hash:
                     self.delete_file(source_path)
             
             # Chunk and prepare records
-            records = self.chunk_document(content, md_path, source_path, file_hash)
+            records = self._chunk_document(content, md_path, source_path, file_hash)
             
             # Add to table
             if self.table is None:
@@ -285,8 +287,6 @@ class DocumentIngester:
         
         try:
             table = self.table.to_arrow()
-            import pyarrow.compute as pc
-            
             total_deleted = 0
             schema_fields = set(table.schema.names)
             
@@ -376,7 +376,6 @@ class DocumentIngester:
             
             # Delete chunks for orphaned md files
             total_deleted = 0
-            import pyarrow.compute as pc
             for md_path_str in orphaned_md_paths:
                 # Delete all chunks with this md_path
                 escaped_path = md_path_str.replace("'", "''")
@@ -505,8 +504,6 @@ class DocumentIngester:
             print("No table to compact.")
             return {"before_bytes": 0, "after_bytes": 0, "saved_bytes": 0}
         
-        import os
-        
         # Calculate size before compaction
         table_path = Path(self.db_path) / f"{self.table_name}.lance"
         before_size = sum(
@@ -562,8 +559,6 @@ class DocumentIngester:
 
 def main():
     """Main ingestion function."""
-    import argparse
-    
     parser = argparse.ArgumentParser(description="Ingest markdown files into LanceDB")
     parser.add_argument("--force", action="store_true", help="Force re-ingestion of all files")
     parser.add_argument("--search", type=str, help="Test search with a query")
@@ -578,7 +573,6 @@ def main():
     
     if args.clear:
         # Clear all data and history
-        import shutil
         table_path = Path(ingester.db_path) / f"{ingester.table_name}.lance"
         if table_path.exists():
             print(f"Clearing table '{ingester.table_name}'...")

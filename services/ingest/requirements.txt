@@ -1,0 +1,5 @@
+# ingest service: document ingestion and embedding
+lancedb>=0.4
+sentence-transformers>=2.2
+langchain-text-splitters>=0.0.1
+pyarrow>=14.0

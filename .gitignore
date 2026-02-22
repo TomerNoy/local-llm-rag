@@ -1,15 +1,26 @@
-# Virtual environments
-venv/
-ingest-venv/
-query-venv/
-venv311/
-marker_output/*
+# Virtual environments (per-project venvs live inside projects/*/)
+**/venv/
+**/.venv/
+**/doclin-venv/
+**/query-venv/
+**/ingest-venv/
 
+# Python
 *.pyc
 __pycache__/
 *.pyo
 *.pyd
 .Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Local config (commit config.example.json if needed)
+config.json
+.env
+.env.*
+!.env.example
 
 # IDE
 .vscode/
@@ -22,11 +33,10 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Project specific
-md-content/*.md
-md-content/**/*.md
+# Storage (runtime data)
+storage/
+watched-dir/
 
-watched-dir/*
-
-# LanceDB
-lancedb/
+# Misc
+comments.txt
+marker_output/

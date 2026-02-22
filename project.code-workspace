@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "services/watch"
+		},
+		{
+			"path": "services/query"
+		},
+		{
+			"path": "services/ingest"
+		}
+	],
+	"settings": {}
+}
