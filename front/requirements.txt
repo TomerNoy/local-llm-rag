@@ -1,0 +1,11 @@
+# Gradio UI for RAG query (front/start.py)
+# Includes query service deps so "uv run start.py" works from front/
+gradio>=4.0
+
+# Query service (start.py imports services.query.query)
+pydantic-ai>=1.0
+pydantic>=2.0
+lancedb>=0.4
+sentence-transformers>=2.2
+pyarrow>=14.0
+openai>=1.0
