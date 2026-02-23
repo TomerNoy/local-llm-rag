@@ -1,0 +1,18 @@
+[project]
+name = "local-llm-rag"
+version = "0.1.0"
+description = "Document assistant with LanceDB and Qwen"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv.workspace]
+members = [
+    "services/watch",
+    "services/watch/pdf_converter",
+    "services/query",
+    "services/ingest",
+    "front"
+]
+
+[tool.uv.sources]
+# This helps if services depend on each other locally

@@ -59,6 +59,14 @@ class FileConversionHandler(FileSystemEventHandler):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         return output_path
 
+    def _write_md_with_metadata(self, output_path, file_path, content):
+        """Write markdown file with standard header: title, source path, separator, then content."""
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(f"# {Path(file_path).name}\n\n")
+            f.write(f"*Source: {file_path}*\n\n")
+            f.write("---\n\n")
+            f.write(content)
+
     def _convert_text_to_md(self, file_path):
         """Convert text-based documents to markdown using pandoc."""
         try:
@@ -67,24 +75,14 @@ class FileConversionHandler(FileSystemEventHandler):
             # Handle plain text files directly (pandoc doesn't support .txt)
             if file_path.suffix.lower() == ".txt":
                 content = Path(file_path).read_text(encoding="utf-8")
-                with open(output_path, "w", encoding="utf-8") as f:
-                    f.write(f"# {Path(file_path).name}\n\n")
-                    f.write(f"*Source: {file_path}*\n\n")
-                    f.write("---\n\n")
-                    f.write(content)
+                self._write_md_with_metadata(output_path, file_path, content)
                 print(f"✓ Converted: {file_path} -> {output_path}")
                 return True
 
             # Use pandoc for other formats
             pypandoc.convert_file(str(file_path), "md", outputfile=str(output_path))
-
-            # Prepend metadata to the markdown output
             md_content = Path(output_path).read_text(encoding="utf-8")
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(f"# {Path(file_path).name}\n\n")
-                f.write(f"*Source: {file_path}*\n\n")
-                f.write("---\n\n")
-                f.write(md_content)
+            self._write_md_with_metadata(output_path, file_path, md_content)
 
             print(f"✓ Converted: {file_path} -> {output_path}")
             return True
@@ -100,14 +98,7 @@ class FileConversionHandler(FileSystemEventHandler):
             # Perform OCR with Hebrew and English support
             image = Image.open(file_path)
             text = pytesseract.image_to_string(image, lang="heb+eng")
-
-            # Write to markdown with metadata
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(f"# {Path(file_path).name}\n\n")
-                f.write(f"*Source: {file_path}*\n\n")
-                f.write("---\n\n")
-                f.write(text)
-
+            self._write_md_with_metadata(output_path, file_path, text)
             print(f"✓ OCR'd: {file_path} -> {output_path}")
             return True
         except Exception as e:
@@ -137,6 +128,8 @@ class FileConversionHandler(FileSystemEventHandler):
             )
 
             if result.returncode == 0 and output_path.exists():
+                md_content = Path(output_path).read_text(encoding="utf-8")
+                self._write_md_with_metadata(output_path, file_path, md_content)
                 print(f"✓ PDF converted: {file_path} -> {output_path}")
                 return True
             else:
@@ -152,11 +145,7 @@ class FileConversionHandler(FileSystemEventHandler):
         try:
             output_path = self.get_output_path(file_path)
             content = Path(file_path).read_text(encoding="utf-8")
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(f"# {Path(file_path).name}\n\n")
-                f.write(f"*Source: {file_path}*\n\n")
-                f.write("---\n\n")
-                f.write(content)
+            self._write_md_with_metadata(output_path, file_path, content)
             print(f"✓ Converted: {file_path} -> {output_path}")
             return True
         except Exception as e:
