@@ -18,6 +18,7 @@ def answer(message, history):
     """Chat callback: run agent on the user message and return the response."""
     if not message or not message.strip():
         return ""
+    db.refresh_table()
     if db.table is None:
         return "No database found. Run ingest first to index your documents."
     ok, err = check_llm_reachable()
@@ -34,7 +35,7 @@ def answer(message, history):
 demo = gr.ChatInterface(
     fn=answer,
     title="RAG Query",
-    description=f"Ask questions about your documents. ({db.count_files()} files indexed.)",
+    description=f"Ask questions about your documents",
 )
 
 if __name__ == "__main__":

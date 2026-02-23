@@ -26,7 +26,7 @@ TABLE_NAME = "documents"
 EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
 # LLM model served by LM Studio (OpenAI-compatible API)
-LLM_MODEL = "openai:qwen3-14b"
+LLM_MODEL = "openai:qwen3-8b"
 
 # Configure LM Studio endpoint (OpenAI-compatible API)
 os.environ.setdefault('OPENAI_BASE_URL', 'http://127.0.0.1:1234/v1')
@@ -90,12 +90,33 @@ class DocumentDatabase:
             print(f"✗ Database table '{self.table_name}' not found. Run ingest first.")
             self.table = None
 
-    def semantic_search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """Search for semantically similar chunks."""
+    def refresh_table(self) -> None:
+        """Re-open the table so queries see the latest data (e.g. after pipeline ingest)."""
+        if self.db is None:
+            return
+        try:
+            self.table = self.db.open_table(self.table_name)
+        except Exception:
+            self.table = None
+
+    def semantic_search(
+        self, query: str, limit: int = 5, min_score: Optional[float] = None
+    ) -> List[Dict[str, Any]]:
+        """Search for semantically similar chunks.
+        min_score: if set, only return results with similarity >= min_score (0-1).
+        Uses cosine distance so _distance = 1 - similarity.
+        """
         if self.table is None:
             return []
         query_vector = self.embedder.encode(query).tolist()
-        return self.table.search(query_vector).limit(limit).to_list()
+        q = (
+            self.table.search(query_vector)
+            .distance_type("cosine")
+            .limit(limit)
+        )
+        if min_score is not None:
+            q = q.where(f"_distance < {1.0 - min_score}")
+        return q.to_list()
 
     def count_files(self) -> int:
         """Count total unique files in database."""
@@ -105,28 +126,30 @@ class DocumentDatabase:
         return len(set(table['md_path'].to_pylist()))
 
     def find_file_by_name(self, name: str) -> List[Dict[str, Any]]:
-        """Find files matching a name pattern."""
+        """Find files matching a name pattern (substring, case-insensitive)."""
         if self.table is None:
             return []
 
         table = self.table.to_arrow()
-        name_lower = name.lower()
+        mask = pc.match_substring(table["file_name"], name, ignore_case=True)
+        filtered = pc.filter(table, mask)
+
+        # Deduplicate by file_name, one dict per file (same shape as before)
+        seen: set = set()
         matches = []
-
-        for idx in range(len(table)):
-            file_name = table['file_name'][idx].as_py()
-            if name_lower in file_name.lower():
-                file_info = {
-                    'file_name': file_name,
-                    'file_type': table['file_type'][idx].as_py(),
-                    'source_path': table['source_path'][idx].as_py(),
-                    'tags': table['tags'][idx].as_py(),
-                    'timestamp': table['timestamp'][idx].as_py(),
-                    'total_chunks': table['total_chunks'][idx].as_py()
-                }
-                if not any(m['file_name'] == file_info['file_name'] for m in matches):
-                    matches.append(file_info)
-
+        for i in range(filtered.num_rows):
+            file_name = filtered["file_name"][i].as_py()
+            if file_name in seen:
+                continue
+            seen.add(file_name)
+            matches.append({
+                "file_name": file_name,
+                "file_type": filtered["file_type"][i].as_py(),
+                "source_path": filtered["source_path"][i].as_py(),
+                "tags": filtered["tags"][i].as_py(),
+                "timestamp": filtered["timestamp"][i].as_py(),
+                "total_chunks": filtered["total_chunks"][i].as_py(),
+            })
         return matches
 
     def list_files_by_date(self, days_ago: int = 1) -> List[Dict[str, Any]]:
