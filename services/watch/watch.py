@@ -10,6 +10,9 @@ import subprocess
 import pypandoc
 import pytesseract
 from PIL import Image
+import frontmatter
+import pandas as pd
+from datetime import datetime, timezone
 
 # Load shared config from project root
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -28,7 +31,7 @@ if PDF_CONVERTER_AVAILABLE:
 else:
     print("⚠️  pdf_converter not available. PDFs will be skipped.")
 
-SUPPORTED_TEXT_FORMATS = {".txt", ".doc", ".docx", ".rtf", ".html", ".htm", ".odt"}
+SUPPORTED_TEXT_FORMATS = {".txt", ".doc", ".docx", ".rtf", ".html", ".htm", ".odt", ".csv", ".xlsx", ".xls"}
 SUPPORTED_IMAGE_FORMATS = {".jpg", ".jpeg", ".png", ".tiff", ".bmp"}
 SUPPORTED_PDF = {".pdf"}
 SUPPORTED_MD = {".md"}
@@ -61,29 +64,49 @@ class FileConversionHandler(FileSystemEventHandler):
 
     def _write_md_with_metadata(self, output_path, file_path, content):
         """Write markdown file with standard header: title, source path, separator, then content."""
+        # Use content (already text); do not load file_path — source may be binary (image, PDF, docx).
+        post = frontmatter.loads(content)
+
+        post["title"] = Path(file_path).stem
+        post["source"] = str(file_path)
+        post["indexed_at"] = datetime.now(timezone.utc).isoformat()
+                
+        body = ' '.join(line.strip() for line in post.content.splitlines() if line.strip() and not line.startswith('#'))
+        post["first_paragraph"] = body[:500]        
+                
         with open(output_path, "w", encoding="utf-8") as f:
-            f.write(f"# {Path(file_path).name}\n\n")
-            f.write(f"*Source: {file_path}*\n\n")
-            f.write("---\n\n")
-            f.write(content)
+            f.write(frontmatter.dumps(post))
 
     def _convert_text_to_md(self, file_path):
-        """Convert text-based documents to markdown using pandoc."""
+        """Convert text-based documents to markdown (pandas for spreadsheets, pandoc for others)."""
         try:
             output_path = self.get_output_path(file_path)
+            suffix = file_path.suffix.lower()
 
-            # Handle plain text files directly (pandoc doesn't support .txt)
-            if file_path.suffix.lower() == ".txt":
+            # 1. Plain text
+            if suffix == ".txt":
                 content = Path(file_path).read_text(encoding="utf-8")
                 self._write_md_with_metadata(output_path, file_path, content)
                 print(f"✓ Converted: {file_path} -> {output_path}")
                 return True
 
-            # Use pandoc for other formats
+            # 2. Spreadsheets (CSV, XLSX, XLS)
+            if suffix in (".csv", ".xlsx", ".xls"):
+                if suffix == ".csv":
+                    df = pd.read_csv(file_path, encoding="utf-8")
+                elif suffix == ".xlsx":
+                    df = pd.read_excel(file_path, engine="openpyxl")
+                else:
+                    df = pd.read_excel(file_path, engine="xlrd")
+                md_content = df.to_markdown(index=False)
+                self._write_md_with_metadata(output_path, file_path, md_content)
+                print(f"✓ Converted: {file_path} -> {output_path}")
+                return True
+
+            # 3. Fallback: pandoc (docx, rtf, html, odt, etc.)
             pypandoc.convert_file(str(file_path), "md", outputfile=str(output_path))
             md_content = Path(output_path).read_text(encoding="utf-8")
             self._write_md_with_metadata(output_path, file_path, md_content)
-
             print(f"✓ Converted: {file_path} -> {output_path}")
             return True
         except Exception as e:

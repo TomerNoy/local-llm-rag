@@ -62,7 +62,7 @@ class FileInfo(BaseModel):
     file_name: str
     file_type: str
     source_path: str
-    tags: List[str]
+    first_paragraph: str
     timestamp: str
     total_chunks: Optional[int] = None
 
@@ -146,8 +146,8 @@ class DocumentDatabase:
                 "file_name": file_name,
                 "file_type": filtered["file_type"][i].as_py(),
                 "source_path": filtered["source_path"][i].as_py(),
-                "tags": filtered["tags"][i].as_py(),
-                "timestamp": filtered["timestamp"][i].as_py(),
+                "first_paragraph": filtered["first_paragraph"][i].as_py(),
+                "timestamp": filtered["indexed_at"][i].as_py(),
                 "total_chunks": filtered["total_chunks"][i].as_py(),
             })
         return matches
@@ -162,7 +162,7 @@ class DocumentDatabase:
 
         files = {}
         for idx in range(len(table)):
-            timestamp = table['timestamp'][idx].as_py()
+            timestamp = table['indexed_at'][idx].as_py()
             if timestamp >= cutoff_date:
                 file_name = table['file_name'][idx].as_py()
                 if file_name not in files:
@@ -170,36 +170,12 @@ class DocumentDatabase:
                         'file_name': file_name,
                         'file_type': table['file_type'][idx].as_py(),
                         'source_path': table['source_path'][idx].as_py(),
-                        'tags': table['tags'][idx].as_py(),
+                        'first_paragraph': table['first_paragraph'][idx].as_py(),
                         'timestamp': timestamp,
                         'total_chunks': table['total_chunks'][idx].as_py()
                     }
 
         return sorted(files.values(), key=lambda x: x['timestamp'], reverse=True)
-
-    def get_files_by_tag(self, tag: str) -> List[Dict[str, Any]]:
-        """Get files with a specific tag (folder)."""
-        if self.table is None:
-            return []
-
-        table = self.table.to_arrow()
-        tag_lower = tag.lower()
-
-        files = {}
-        for idx in range(len(table)):
-            tags = table['tags'][idx].as_py()
-            if any(tag_lower in t.lower() for t in tags):
-                file_name = table['file_name'][idx].as_py()
-                if file_name not in files:
-                    files[file_name] = {
-                        'file_name': file_name,
-                        'file_type': table['file_type'][idx].as_py(),
-                        'source_path': table['source_path'][idx].as_py(),
-                        'tags': tags,
-                        'timestamp': table['timestamp'][idx].as_py()
-                    }
-
-        return list(files.values())
 
     def get_files_by_type(self, file_type: str) -> List[Dict[str, Any]]:
         """Get files of a specific type (pdf, txt, image_ocr, etc)."""
@@ -219,8 +195,8 @@ class DocumentDatabase:
                         'file_name': file_name,
                         'file_type': ftype,
                         'source_path': table['source_path'][idx].as_py(),
-                        'tags': table['tags'][idx].as_py(),
-                        'timestamp': table['timestamp'][idx].as_py()
+                        'first_paragraph': table['first_paragraph'][idx].as_py(),
+                        'timestamp': table['indexed_at'][idx].as_py()
                     }
 
         return list(files.values())
@@ -235,21 +211,15 @@ class DocumentDatabase:
         total_chunks = len(table)
         unique_files = len(set(table['md_path'].to_pylist()))
         file_types = {}
-        tags_count = {}
 
         for idx in range(len(table)):
             ftype = table['file_type'][idx].as_py()
             file_types[ftype] = file_types.get(ftype, 0) + 1
 
-            tags = table['tags'][idx].as_py()
-            for tag in tags:
-                tags_count[tag] = tags_count.get(tag, 0) + 1
-
         return {
             'total_chunks': total_chunks,
             'unique_files': unique_files,
             'file_types': file_types,
-            'tags': tags_count
         }
 
     def list_all_files(self) -> List[Dict[str, Any]]:
@@ -267,8 +237,8 @@ class DocumentDatabase:
                     'file_name': table['file_name'][idx].as_py(),
                     'file_type': table['file_type'][idx].as_py(),
                     'source_path': table['source_path'][idx].as_py(),
-                    'tags': table['tags'][idx].as_py(),
-                    'timestamp': table['timestamp'][idx].as_py(),
+                    'first_paragraph': table['first_paragraph'][idx].as_py(),
+                    'timestamp': table['indexed_at'][idx].as_py(),
                     'total_chunks': table['total_chunks'][idx].as_py()
                 }
 
@@ -320,7 +290,9 @@ def _format_file_tree(files: List[FileInfo]) -> str:
         indent = "    " if is_last else "│   "
         output.append(f"{indent}├─ Type: {file.file_type}")
         output.append(f"{indent}├─ Path: {file.source_path}")
-        output.append(f"{indent}├─ Tags: {', '.join(file.tags)}")
+        if file.first_paragraph:
+            preview = (file.first_paragraph[:120] + "…") if len(file.first_paragraph) > 120 else file.first_paragraph
+            output.append(f"{indent}├─ First paragraph: {preview}")
         if file.total_chunks:
             output.append(f"{indent}├─ Chunks: {file.total_chunks}")
         output.append(f"{indent}└─ Modified: {file.timestamp}")
@@ -373,20 +345,12 @@ def _format_stats(stats: Dict[str, Any]) -> str:
     output.append(f"├── Unique Files: {stats.get('unique_files', 0)}")
 
     if 'file_types' in stats:
-        output.append("├── File Types:")
+        output.append("└── File Types:")
         types = stats['file_types']
         for i, (ftype, count) in enumerate(types.items(), 1):
             is_last_type = i == len(types)
-            type_prefix = "│   └── " if is_last_type else "│   ├── "
+            type_prefix = "    └── " if is_last_type else "    ├── "
             output.append(f"{type_prefix}{ftype}: {count}")
-
-    if 'tags' in stats:
-        output.append("└── Tags:")
-        tags = stats['tags']
-        for i, (tag, count) in enumerate(tags.items(), 1):
-            is_last_tag = i == len(tags)
-            tag_prefix = "    └── " if is_last_tag else "    ├── "
-            output.append(f"{tag_prefix}{tag}: {count}")
 
     return "\n".join(output)
 
@@ -403,7 +367,7 @@ TOOL USAGE:
 - For content questions ("what's my address?", "find X"): use semantic_search()
 - For file listings: use list_all_files()
 - For summaries: use summarize_all_files() or get_file_content()
-- For metadata queries: use find_file_by_name(), get_files_by_tag(), etc.
+- For metadata queries: use find_file_by_name(), get_files_by_type(), etc.
 
 OUTPUT RULES:
 - When tools return formatted text, output it exactly as-is
@@ -464,19 +428,6 @@ def list_files_by_date(ctx: RunContext, days_ago: int = 1) -> str:
     files = db.list_files_by_date(days_ago)
     if not files:
         return f"No files found from the last {days_ago} day(s)."
-    return _format_file_tree([FileInfo(**f) for f in files])
-
-
-@agent.tool
-def get_files_by_tag(ctx: RunContext, tag: str) -> str:
-    """Get files with a specific tag/folder.
-
-    Args:
-        tag: Tag name (folder name) to filter by
-    """
-    files = db.get_files_by_tag(tag)
-    if not files:
-        return f"No files found with tag '{tag}'."
     return _format_file_tree([FileInfo(**f) for f in files])
 
 

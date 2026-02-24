@@ -16,6 +16,7 @@ import lancedb
 import pyarrow.compute as pc
 from sentence_transformers import SentenceTransformer
 from langchain_text_splitters import MarkdownTextSplitter
+import frontmatter
 
 # Load shared config from project root
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -95,62 +96,6 @@ class DocumentIngester:
                 md5.update(chunk)
         return md5.hexdigest()
     
-    def _extract_tags_from_path(self, md_path: Path) -> List[str]:
-        """Extract folder structure as tags."""
-        # Get relative path from md-content
-        rel_path = md_path.relative_to(MD_CONTENT_DIR)
-        # Get all parent folders
-        tags = [part for part in rel_path.parent.parts if part != '.']
-        return tags if tags else ["root"]
-    
-    def _determine_file_type(self, md_path: Path, source_path: Path) -> str:
-        """Determine the type of original file."""
-        if not source_path.exists():
-            return "unknown"
-        
-        suffix = source_path.suffix.lower()
-        
-        # Check if it's from OCR
-        with open(md_path, 'r', encoding='utf-8') as f:
-            first_lines = f.read(200)
-            if "*Source:" in first_lines:
-                if suffix == '.pdf':
-                    return "pdf_ocr"
-                elif suffix in {'.jpg', '.jpeg', '.png', '.tiff', '.bmp'}:
-                    return "image_ocr"
-        
-        # Text-based conversions
-        if suffix == '.pdf':
-            return "pdf_text"
-        elif suffix == '.txt':
-            return "txt"
-        elif suffix in {'.html', '.htm'}:
-            return "html"
-        elif suffix in {'.doc', '.docx'}:
-            return "docx"
-        elif suffix in {'.rtf'}:
-            return "rtf"
-        else:
-            return "other"
-    
-    def _find_source_file(self, md_path: Path) -> Path:
-        """Find original source file in watched-dir."""
-        # Get relative path and reconstruct with different extensions
-        rel_path = md_path.relative_to(MD_CONTENT_DIR)
-        base_path = WATCHED_DIR / rel_path.with_suffix('')
-        
-        # Try common extensions
-        extensions = ['.pdf', '.txt', '.jpg', '.jpeg', '.png', '.html', '.htm', 
-                     '.doc', '.docx', '.rtf', '.tiff', '.bmp', '.odt']
-        
-        for ext in extensions:
-            source_path = base_path.with_suffix(ext)
-            if source_path.exists():
-                return source_path
-        
-        # Fallback: return the path (not resolved) even if it doesn't exist
-        return base_path
-    
     def _get_existing_hash(self, source_path: Path) -> str:
         """Get hash of existing file in database, if any."""
         if self.table is None:
@@ -203,11 +148,15 @@ class DocumentIngester:
         total_chunks = len(chunks)
         
         # Extract metadata
-        tags = self._extract_tags_from_path(md_path)
-        file_type = self._determine_file_type(md_path, source_path)
-        file_name = md_path.stem
-        timestamp = datetime.now().isoformat()
-        
+        post = frontmatter.loads(content)
+        title = post["title"]
+        first_paragraph = post["first_paragraph"]
+        indexed_at = post["indexed_at"]
+
+        file_extension = source_path.suffix.lower()
+        if not file_extension:
+            file_extension = "unknown"
+                        
         # Prepare chunk records
         records = []
         for idx, chunk_text in enumerate(chunks):
@@ -219,14 +168,14 @@ class DocumentIngester:
                 "text": chunk_text,
                 "source_path": self.normalize_path(source_path),
                 "md_path": self.normalize_path(md_path),
-                "file_name": file_name,
-                "file_type": file_type,
+                "file_name": title,
+                "file_type": file_extension,
+                "first_paragraph": first_paragraph,
+                "indexed_at": indexed_at,
                 "file_hash": file_hash,
-                "tags": tags,
                 "chunk_index": idx,
                 "total_chunks": total_chunks,
-                "chunk_size": len(chunk_text),
-                "timestamp": timestamp
+                "chunk_size": len(chunk_text),                
             }
             records.append(record)
         
@@ -235,11 +184,15 @@ class DocumentIngester:
     def ingest_file(self, md_path: Path, force: bool = False) -> int:
         """Ingest a single markdown file with hash-based change detection."""
         try:
-            # Find source file
-            source_path = self._find_source_file(md_path)
-            
-            # Calculate hash of markdown file
-            file_hash = self._get_file_hash(md_path)
+            # Read content once (needed for hash, chunking, and frontmatter)
+            with open(md_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            post = frontmatter.loads(content)
+            source_path = Path(post["source"]).resolve()
+
+            # Hash of content for change detection
+            file_hash = hashlib.md5(content.encode('utf-8')).hexdigest()
             
             # Check if file already exists with same hash (unless force=True)
             if not force:
@@ -247,11 +200,7 @@ class DocumentIngester:
                 if existing_hash == file_hash:
                     print(f"⊘ Skipped (unchanged): {md_path.name}")
                     return -1  # -1 indicates skipped due to unchanged
-            
-            # Read content
-            with open(md_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
+
             # Skip empty files
             if not content.strip():
                 print(f"⊘ Skipped (empty): {md_path.name}")
@@ -577,8 +526,7 @@ def main():
         if table_path.exists():
             print(f"Clearing table '{ingester.table_name}'...")
             shutil.rmtree(table_path)
-            print(f"✓ Deleted all data and history")
-            print(f"✓ Table will be recreated on next ingestion")
+            print(f"✓ Deleted all data and history")            
         else:
             print("Table already empty.")
         print()
@@ -609,7 +557,7 @@ def main():
         results = ingester.search(args.search, limit=3)
         for idx, result in enumerate(results, 1):
             print(f"{idx}. {result['file_name']} (chunk {result['chunk_index']})")
-            print(f"   Type: {result['file_type']}, Tags: {result['tags']}")
+            print(f"   Type: {result['file_type']}")
             print(f"   {result['text'][:200]}...")
             print()
     else:

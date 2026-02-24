@@ -1,5 +1,10 @@
-# watch service: file watcher, pandoc, tesseract, images
+# watch service: file watcher, pandoc, tesseract, images, spreadsheets
 watchdog>=4.0
 pypandoc>=1.13
 pytesseract>=0.3
 Pillow>=10.0
+python-frontmatter>=1.1.0
+pandas>=2.0
+openpyxl>=3.0
+xlrd>=2.0
+tabulate>=0.9
